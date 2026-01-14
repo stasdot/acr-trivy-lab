@@ -21,15 +21,15 @@ jobs:
       - name: Login to ACR
         uses: docker/login-action@v2
         with:
-          registry: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+          registry: ${{ secrets.ACR_LINK }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
 
       # 3. Build the Image
       # We build it locally on the runner. It is NOT in Azure yet.
       - name: Build Docker Image
         run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/mypythonapp:${{ github.run_number }} .
+          docker build -t ${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }} .
 
       # 4. The Gatekeeper: Trivy Scan
       # This is the most important step.
@@ -38,7 +38,7 @@ jobs:
       - name: Run Trivy Security Scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ secrets.ACR_LOGIN_SERVER }}/mypythonapp:${{ github.run_number }}'
+          image-ref: '${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }}'
           format: 'table'
           exit-code: '1'
           severity: 'CRITICAL'
@@ -50,5 +50,5 @@ jobs:
       - name: Push Image to ACR
         if: success()
         run: |
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/mypythonapp:${{ github.run_number }}
+          docker push ${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }}
           echo "✅ Success! Image pushed to Azure."
