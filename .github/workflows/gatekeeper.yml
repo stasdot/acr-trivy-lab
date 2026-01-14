@@ -1,54 +1,51 @@
 name: Security Gatekeeper Pipeline
 
-# Trigger the workflow when pushing to the vulnerable branch
 on:
   push:
-  workflow_dispatch: # Allows manual triggering for testing
+    branches:
+      - vulnerable
+  workflow_dispatch:
 
 jobs:
   build-scan-push:
     runs-on: ubuntu-latest
-    
+
     steps:
-      # 1. Checkout Code
+      # 1. Checkout source code
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-            fetch-depth: 0
+          fetch-depth: 0
 
-      # 2. Login to Azure Container Registry
-      # We log in early so we are ready, but we WON'T push yet.
+      # 2. Build image locally (NO registry name yet)
+      - name: Build Docker image (local)
+        run: |
+          docker build -t vulnerable-app:${{ github.run_number }} .
+
+      # 3. Security Gatekeeper – Trivy scan
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: vulnerable-app:${{ github.run_number }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      # 4. Login to Azure Container Registry (only if scan passed)
       - name: Login to ACR
+        if: success()
         uses: docker/login-action@v2
         with:
           registry: ${{ secrets.ACR_LINK }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
 
-      # 3. Build the Image
-      # We build it locally on the runner. It is NOT in Azure yet.
-      - name: Build Docker Image
-        run: |
-          docker build -t ${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }} .
-
-      # 4. The Gatekeeper: Trivy Scan
-      # This is the most important step.
-      # exit-code: '1' -> Creates a pipeline FAILURE if vulns are found.
-      # severity: 'CRITICAL' -> Only blocks for Critical issues.
-      - name: Run Trivy Security Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }}'
-          format: 'table'
-          exit-code: '1'
-          severity: 'CRITICAL'
-          ignore-unfixed: true
-
-      # 5. Push to ACR
-      # This step only runs if Step 4 (Trivy) succeeded.
-      # Since we are on the 'vulnerable' branch, this step should naturally SKIP/CANCEL.
-      - name: Push Image to ACR
+      # 5. Tag and push image to ACR
+      - name: Push image to ACR
         if: success()
         run: |
+          docker tag vulnerable-app:${{ github.run_number }} \
+            ${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }}
           docker push ${{ secrets.ACR_LINK }}/vulnerable-app:${{ github.run_number }}
-          echo "✅ Success! Image pushed to Azure."
+          echo "image pushed successfully"
